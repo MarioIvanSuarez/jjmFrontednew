@@ -13,18 +13,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.jjmfronted.models.MockVacancy
+import com.example.jjmfronted.models.Vacante
+import com.example.jjmfronted.models.CreatePostulacionRequest
+import com.example.jjmfronted.network.ApiClient
 import com.example.jjmfronted.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VacancyDetailScreen(
-    vacancy: MockVacancy,
+    vacancy: Vacante,
+    token: String,
     onBack: () -> Unit,
     onApply: () -> Unit
 ) {
     var showDialog by remember { mutableStateOf(false) }
     var applied by remember { mutableStateOf(false) }
+    var applying by remember { mutableStateOf(false) }
+    var applyError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     Column(modifier = Modifier.fillMaxSize().background(Gray50)) {
         TopAppBar(
@@ -65,21 +72,28 @@ fun VacancyDetailScreen(
 
                     DetailRow("📄", "Descripción", vacancy.description)
                     Spacer(modifier = Modifier.height(12.dp))
-                    DetailRow("✓", "Requisitos", vacancy.requirements)
+                    DetailRow("✓", "Requisitos", vacancy.requirements ?: "No especificados")
                     Spacer(modifier = Modifier.height(12.dp))
                     Row {
-                        HalfDetail("🎓", "Área", vacancy.area)
+                        HalfDetail("🎓", "Área", vacancy.area ?: "General")
                         Spacer(modifier = Modifier.width(12.dp))
-                        HalfDetail("🕐", "Duración", vacancy.duration)
+                        HalfDetail("🕐", "Duración", vacancy.duration ?: "No especificada")
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Row {
-                        HalfDetail("📍", "Ubicación", vacancy.location)
+                        HalfDetail("📍", "Ubicación", vacancy.location ?: "No especificada")
                         Spacer(modifier = Modifier.width(12.dp))
-                        HalfDetail("🕐", "Horario", vacancy.schedule)
+                        HalfDetail("🕐", "Horario", vacancy.schedule ?: "No especificado")
                     }
                     Spacer(modifier = Modifier.height(12.dp))
-                    DetailRow("👥", "Cupos", "${vacancy.slots - vacancy.appliedCount} disponibles de ${vacancy.slots}")
+                    DetailRow("👥", "Cupos", "${vacancy.slots} disponibles")
+                }
+            }
+
+            if (applyError != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFFFEBEE)) {
+                    Text(applyError!!, color = Red600, modifier = Modifier.padding(12.dp), fontSize = 13.sp)
                 }
             }
 
@@ -87,26 +101,28 @@ fun VacancyDetailScreen(
 
             Button(
                 onClick = {
-                    if (!applied) {
+                    if (!applied && !applying) {
                         showDialog = true
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
+                enabled = !applying,
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (applied) Green600 else Blue800
                 )
             ) {
-                Text(
-                    if (applied) "✓" else "📨",
-                    fontSize = 18.sp
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    if (applied) "Solicitud enviada" else "Aplicar a esta vacante",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                if (applying) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp, color = Color.White)
+                } else {
+                    Text(if (applied) "✓" else "📨", fontSize = 18.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        if (applied) "Solicitud enviada" else "Aplicar a esta vacante",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }
@@ -117,14 +133,29 @@ fun VacancyDetailScreen(
             title = { Text("Confirmar aplicación") },
             text = { Text("¿Estás seguro de aplicar a \"${vacancy.title}\" en ${vacancy.companyName}?") },
             confirmButton = {
-                Button(onClick = { applied = true; showDialog = false }) {
-                    Text("Confirmar")
-                }
+                Button(
+                    onClick = {
+                        showDialog = false
+                        applying = true
+                        scope.launch {
+                            ApiClient.setToken(token)
+                            val result = ApiClient.postular(CreatePostulacionRequest(vacanteId = vacancy.id))
+                            result.fold(
+                                onSuccess = {
+                                    applied = true
+                                    applying = false
+                                },
+                                onFailure = { e ->
+                                    applyError = e.message ?: "Error al aplicar"
+                                    applying = false
+                                }
+                            )
+                        }
+                    }
+                ) { Text("Confirmar") }
             },
             dismissButton = {
-                OutlinedButton(onClick = { showDialog = false }) {
-                    Text("Cancelar")
-                }
+                OutlinedButton(onClick = { showDialog = false }) { Text("Cancelar") }
             }
         )
     }

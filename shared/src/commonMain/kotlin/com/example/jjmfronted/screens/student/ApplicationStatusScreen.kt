@@ -13,15 +13,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.jjmfronted.models.MockApplication
-import com.example.jjmfronted.models.ApplicationStatus
-import com.example.jjmfronted.models.MockData
+import com.example.jjmfronted.models.Postulacion
+import com.example.jjmfronted.network.ApiClient
 import com.example.jjmfronted.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ApplicationStatusScreen(onBack: () -> Unit) {
-    val applications = MockData.applications
+fun ApplicationStatusScreen(
+    token: String,
+    onBack: () -> Unit
+) {
+    var postulaciones by remember { mutableStateOf<List<Postulacion>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(token) {
+        ApiClient.setToken(token)
+        val result = ApiClient.getMisPostulaciones()
+        result.fold(
+            onSuccess = { postulaciones = it },
+            onFailure = { }
+        )
+        loading = false
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(Gray50)) {
         TopAppBar(
@@ -38,7 +51,11 @@ fun ApplicationStatusScreen(onBack: () -> Unit) {
             )
         )
 
-        if (applications.isEmpty()) {
+        if (loading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Blue800)
+            }
+        } else if (postulaciones.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("📥", fontSize = 80.sp, color = Gray200)
@@ -51,7 +68,7 @@ fun ApplicationStatusScreen(onBack: () -> Unit) {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(applications) { app ->
+                items(postulaciones) { app ->
                     ApplicationCard(app)
                 }
             }
@@ -60,11 +77,12 @@ fun ApplicationStatusScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun ApplicationCard(application: MockApplication) {
-    val (statusEmoji, statusColor, statusText) = when (application.status) {
-        ApplicationStatus.PENDING -> Triple("⏳", Amber, "En revisión")
-        ApplicationStatus.ACCEPTED -> Triple("✓", Green600, "Aceptada")
-        ApplicationStatus.REJECTED -> Triple("✕", Red600, "Rechazada")
+fun ApplicationCard(postulacion: Postulacion) {
+    val (statusEmoji, statusColor, statusText) = when (postulacion.status) {
+        "PENDIENTE" -> Triple("⏳", Amber, "En revisión")
+        "ACEPTADA" -> Triple("✓", Green600, "Aceptada")
+        "RECHAZADA" -> Triple("✕", Red600, "Rechazada")
+        else -> Triple("⏳", Gray600, postulacion.status)
     }
 
     Card(
@@ -84,9 +102,11 @@ fun ApplicationCard(application: MockApplication) {
             }
             Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(application.vacancyTitle, fontWeight = FontWeight.SemiBold, color = Gray900, fontSize = 15.sp)
-                Text(application.companyName, color = Gray600, fontSize = 13.sp)
-                Text("Enviada: ${application.appliedDate}", color = Gray400, fontSize = 11.sp)
+                Text(postulacion.vacanteTitle ?: "Vacante", fontWeight = FontWeight.SemiBold, color = Gray900, fontSize = 15.sp)
+                Text("Solicitud #${postulacion.vacanteId}", color = Gray600, fontSize = 13.sp)
+                postulacion.createdAt?.let {
+                    Text("Enviada: $it", color = Gray400, fontSize = 11.sp)
+                }
             }
             Surface(shape = RoundedCornerShape(20.dp), color = statusColor.copy(alpha = 0.1f)) {
                 Text(

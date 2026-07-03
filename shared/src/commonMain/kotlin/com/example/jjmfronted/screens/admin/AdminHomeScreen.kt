@@ -13,22 +13,49 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.jjmfronted.models.MockData
+import com.example.jjmfronted.models.User
+import com.example.jjmfronted.network.ApiClient
 import com.example.jjmfronted.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminHomeScreen(
+    user: User,
+    token: String,
     onDocumentsClick: () -> Unit,
     onDeliveriesClick: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onNotificationsClick: () -> Unit = {}
 ) {
+    var companiesCount by remember { mutableStateOf("...") }
+    var vacanciesCount by remember { mutableStateOf("...") }
+    var applicationsCount by remember { mutableStateOf("...") }
+    var documentsCount by remember { mutableStateOf("...") }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(token) {
+        ApiClient.setToken(token)
+        val companies = ApiClient.getCompaniesMap()
+        companies.fold(onSuccess = { companiesCount = "${it.size}" }, onFailure = { companiesCount = "0" })
+        val vacantes = ApiClient.getVacantes()
+        vacantes.fold(onSuccess = { vacanciesCount = "${it.size}" }, onFailure = { vacanciesCount = "0" })
+        val docs = ApiClient.getDocumentosOficiales()
+        docs.fold(onSuccess = { documentsCount = "${it.size}" }, onFailure = { documentsCount = "0" })
+        loading = false
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(Gray50)) {
         TopAppBar(
             title = { Text("Admin · Vinculación", fontWeight = FontWeight.Bold) },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Blue800, titleContentColor = Color.White
-            )
+                containerColor = Blue800, titleContentColor = Color.White,
+                actionIconContentColor = Color.White
+            ),
+            actions = {
+                IconButton(onClick = onNotificationsClick) {
+                    Text("\uD83D\uDD14", fontSize = 20.sp, color = Color.White)
+                }
+            }
         )
 
         Surface(modifier = Modifier.fillMaxWidth(), color = Blue800) {
@@ -56,13 +83,13 @@ fun AdminHomeScreen(
             item {
                 Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(20.dp)) {
-                        SummaryRow("Empresas registradas", "${MockData.companies.size}", Blue800)
+                        SummaryRow("Empresas registradas", companiesCount, Blue800)
                         Divider(color = Gray200, modifier = Modifier.padding(vertical = 10.dp))
-                        SummaryRow("Vacantes activas", "${MockData.vacancies.size}", Blue600)
+                        SummaryRow("Vacantes activas", vacanciesCount, Blue600)
                         Divider(color = Gray200, modifier = Modifier.padding(vertical = 10.dp))
-                        SummaryRow("Solicitudes recibidas", "${MockData.applications.size}", Cyan600)
+                        SummaryRow("Solicitudes recibidas", applicationsCount, Cyan600)
                         Divider(color = Gray200, modifier = Modifier.padding(vertical = 10.dp))
-                        SummaryRow("Documentos subidos", "${MockData.documents.size}", Green600)
+                        SummaryRow("Documentos subidos", documentsCount, Green600)
                     }
                 }
             }

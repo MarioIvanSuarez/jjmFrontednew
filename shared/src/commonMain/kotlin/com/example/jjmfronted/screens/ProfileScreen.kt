@@ -77,7 +77,13 @@ fun ProfileScreen(
                     Divider(color = Gray200, modifier = Modifier.padding(vertical = 12.dp))
                     ProfileInfoItem("#", "ID", "${user.id}")
                     Divider(color = Gray200, modifier = Modifier.padding(vertical = 12.dp))
-                    ProfileInfoItem("🎓", "Rol", "Estudiante")
+                    val roleDisplay = when (user.role) {
+                        "ESTUDIANTE" -> "Estudiante"
+                        "EMPRESA" -> "Empresa"
+                        "ADMINISTRADOR" -> "Administrador"
+                        else -> user.role ?: "Estudiante"
+                    }
+                    ProfileInfoItem("🎓", "Rol", roleDisplay)
                 }
             }
 

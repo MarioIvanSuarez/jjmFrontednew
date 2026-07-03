@@ -67,6 +67,7 @@ fun RegisterScreen(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 RoleChip("Estudiante", UserRole.STUDENT, selectedRole == UserRole.STUDENT) { selectedRole = UserRole.STUDENT }
                 RoleChip("Empresa", UserRole.COMPANY, selectedRole == UserRole.COMPANY) { selectedRole = UserRole.COMPANY }
+                RoleChip("Vinculaci\u00f3n", UserRole.ADMIN, selectedRole == UserRole.ADMIN) { selectedRole = UserRole.ADMIN }
             }
 
             Spacer(modifier = Modifier.height(22.dp))

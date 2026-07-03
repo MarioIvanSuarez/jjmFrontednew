@@ -13,28 +13,62 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.jjmfronted.models.MockData
+import com.example.jjmfronted.models.Postulacion
+import com.example.jjmfronted.models.User
+import com.example.jjmfronted.network.ApiClient
 import com.example.jjmfronted.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CompanyHomeScreen(
+    user: User,
+    token: String,
     onVacanciesClick: () -> Unit,
     onRequestsClick: () -> Unit,
     onAttendanceClick: () -> Unit,
     onDocumentsClick: () -> Unit,
     onProfileClick: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onNotificationsClick: () -> Unit = {}
 ) {
+    var companyName by remember { mutableStateOf("Empresa") }
+    var myVacantesCount by remember { mutableStateOf("0") }
+    var recentSolicitudes by remember { mutableStateOf<List<Postulacion>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(token) {
+        ApiClient.setToken(token)
+        val profileResult = ApiClient.getMyCompanyProfile()
+        profileResult.fold(
+            onSuccess = { companyName = it.name ?: "Mi Empresa" },
+            onFailure = { }
+        )
+        val vacantesResult = ApiClient.getMyVacantes()
+        vacantesResult.fold(
+            onSuccess = { myVacantesCount = "${it.size}" },
+            onFailure = { }
+        )
+        val solicitudesResult = ApiClient.getPostulacionesByCompany()
+        solicitudesResult.fold(
+            onSuccess = { recentSolicitudes = it.take(3) },
+            onFailure = { }
+        )
+        loading = false
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(Gray50)) {
         TopAppBar(
-            title = { Text("TechSolutions MX", fontWeight = FontWeight.Bold) },
+            title = { Text(companyName, fontWeight = FontWeight.Bold) },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Blue800,
                 titleContentColor = Color.White,
                 actionIconContentColor = Color.White
             ),
             actions = {
+                IconButton(onClick = onNotificationsClick) {
+                    Text("\uD83D\uDD14", fontSize = 20.sp, color = Color.White)
+                }
                 IconButton(onClick = onProfileClick) {
                     Text("👤", fontSize = 22.sp, color = Color.White)
                 }
@@ -52,48 +86,54 @@ fun CompanyHomeScreen(
             }
         }
 
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    QuickActionCard("Vacantes", "3 activas", "💼", Blue800, onClick = onVacanciesClick, Modifier.weight(1f))
-                    QuickActionCard("Solicitudes", "5 nuevas", "👥", Cyan600, onClick = onRequestsClick, Modifier.weight(1f))
+        if (loading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Blue800)
+            }
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        QuickActionCard("Vacantes", "$myVacantesCount activas", "💼", Blue800, onClick = onVacanciesClick, Modifier.weight(1f))
+                        QuickActionCard("Solicitudes", "${recentSolicitudes.size} nuevas", "👥", Cyan600, onClick = onRequestsClick, Modifier.weight(1f))
+                    }
                 }
-            }
-            item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    QuickActionCard("Asistencias", "5 registros", "📅", Green600, onClick = onAttendanceClick, Modifier.weight(1f))
-                    QuickActionCard("Documentos", "8 archivos", "📁", Amber, onClick = onDocumentsClick, Modifier.weight(1f))
+                item {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        QuickActionCard("Asistencias", "Gestión", "📅", Green600, onClick = onAttendanceClick, Modifier.weight(1f))
+                        QuickActionCard("Documentos", "Archivos", "📁", Amber, onClick = onDocumentsClick, Modifier.weight(1f))
+                    }
                 }
-            }
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Últimas solicitudes", style = MaterialTheme.typography.titleMedium, color = Gray900)
-            }
-            items(MockData.applications.take(3)) { app ->
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Últimas solicitudes", style = MaterialTheme.typography.titleMedium, color = Gray900)
+                }
+                items(recentSolicitudes) { app ->
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Surface(shape = RoundedCornerShape(8.dp), color = Blue50, modifier = Modifier.size(40.dp)) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("👤", fontSize = 20.sp)
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(shape = RoundedCornerShape(8.dp), color = Blue50, modifier = Modifier.size(40.dp)) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("👤", fontSize = 20.sp)
+                                }
                             }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(app.studentName, fontWeight = FontWeight.Medium, color = Gray900)
+                                Text(app.vacanteTitle ?: "Vacante", color = Gray600, fontSize = 13.sp)
+                            }
+                            app.createdAt?.let { Text(it, color = Gray400, fontSize = 11.sp) }
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(app.studentName, fontWeight = FontWeight.Medium, color = Gray900)
-                            Text(app.vacancyTitle, color = Gray600, fontSize = 13.sp)
-                        }
-                        Text(app.appliedDate, color = Gray400, fontSize = 11.sp)
                     }
                 }
             }

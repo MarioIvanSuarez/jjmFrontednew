@@ -13,15 +13,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.jjmfronted.models.MockData
-import com.example.jjmfronted.models.MockDocument
+import com.example.jjmfronted.models.Document
+import com.example.jjmfronted.network.ApiClient
 import com.example.jjmfronted.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StudentDocumentsScreen(onBack: () -> Unit) {
-    val documents = MockData.documents.filter { it.uploadedBy != "Vinculación" }
-    val officialDocs = MockData.documents.filter { it.uploadedBy == "Vinculación" }
+fun StudentDocumentsScreen(
+    token: String,
+    onBack: () -> Unit
+) {
+    var misDocumentos by remember { mutableStateOf<List<Document>>(emptyList()) }
+    var oficiales by remember { mutableStateOf<List<Document>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(token) {
+        ApiClient.setToken(token)
+        val docsResult = ApiClient.getMisDocumentos()
+        val ofResult = ApiClient.getDocumentosOficiales()
+        docsResult.fold(onSuccess = { misDocumentos = it }, onFailure = { })
+        ofResult.fold(onSuccess = { oficiales = it }, onFailure = { })
+        loading = false
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(Gray50)) {
         TopAppBar(
@@ -38,36 +51,42 @@ fun StudentDocumentsScreen(onBack: () -> Unit) {
             )
         )
 
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                Text("Formatos oficiales", style = MaterialTheme.typography.titleMedium, color = Gray900)
-                Spacer(modifier = Modifier.height(8.dp))
+        if (loading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Blue800)
             }
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                item {
+                    Text("Formatos oficiales", style = MaterialTheme.typography.titleMedium, color = Gray900)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
-            items(officialDocs) { doc -> DocumentCard(doc, isOfficial = true) }
+                items(oficiales) { doc -> DocumentCard(doc, isOfficial = true) }
 
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Mis documentos", style = MaterialTheme.typography.titleMedium, color = Gray900)
-                Spacer(modifier = Modifier.height(8.dp))
-            }
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Mis documentos", style = MaterialTheme.typography.titleMedium, color = Gray900)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
-            items(documents) { doc -> DocumentCard(doc, isOfficial = false) }
+                items(misDocumentos) { doc -> DocumentCard(doc, isOfficial = false) }
 
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = {},
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Blue800)
-                ) {
-                    Text("📤", fontSize = 16.sp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Subir documento", fontWeight = FontWeight.SemiBold)
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {},
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Blue800)
+                    ) {
+                        Text("📤", fontSize = 16.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Subir documento", fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }
@@ -75,7 +94,7 @@ fun StudentDocumentsScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun DocumentCard(doc: MockDocument, isOfficial: Boolean) {
+private fun DocumentCard(doc: Document, isOfficial: Boolean) {
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -101,7 +120,7 @@ private fun DocumentCard(doc: MockDocument, isOfficial: Boolean) {
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(doc.name, fontWeight = FontWeight.Medium, color = Gray900, fontSize = 14.sp)
-                Text("${doc.type} · ${doc.uploadDate}", color = Gray600, fontSize = 12.sp)
+                Text("${doc.type ?: "Documento"} · ${doc.createdAt ?: ""}", color = Gray600, fontSize = 12.sp)
             }
             IconButton(onClick = {}) {
                 Text("📥", fontSize = 16.sp, color = Blue600)
