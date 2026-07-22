@@ -17,6 +17,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.jjmfronted.models.User
 import com.example.jjmfronted.notifications.NotificationHelper
+import com.example.jjmfronted.sensor.AndroidGpsProvider
+import com.example.jjmfronted.sensor.SensorProvider
 import com.example.jjmfronted.worker.SyncWorker
 import java.util.concurrent.TimeUnit
 
@@ -25,9 +27,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
+        SensorProvider.gps = AndroidGpsProvider(this)
+
         NotificationHelper.createNotificationChannel(this)
         scheduleBackgroundSync()
         requestNotificationPermission()
+        requestLocationPermission()
 
         setContent {
             App(
@@ -78,12 +83,25 @@ class MainActivity : ComponentActivity() {
                     this, Manifest.permission.POST_NOTIFICATIONS
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
-                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
 
-    private val permissionLauncher = registerForActivityResult(
+    private fun requestLocationPermission() {
+        if (ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
+    private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
 }

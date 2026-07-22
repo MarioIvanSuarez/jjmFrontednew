@@ -27,7 +27,8 @@ actual fun InteractiveMap(
     initialLatitude: Double,
     initialLongitude: Double,
     onMapClick: (Double, Double) -> Unit,
-    modifier: Modifier
+    modifier: Modifier,
+    userLocation: UserLocation? = null
 ) {
     val bridge = remember { MapJsBridge(onMapClick) }
 
@@ -36,6 +37,11 @@ actual fun InteractiveMap(
             """{id:${m.id},name:"${m.name.replace("\"","\\\"")}",lat:${m.latitude},lng:${m.longitude},desc:"${(m.description?:"").replace("\"","\\\"")}"}"""
         }
     }
+
+    val userLat = userLocation?.latitude ?: initialLatitude
+    val userLng = userLocation?.longitude ?: initialLongitude
+
+    val hasUserLocation = userLocation != null
 
     val html = """
         <!DOCTYPE html>
@@ -47,6 +53,14 @@ actual fun InteractiveMap(
             <style>
                 body { margin:0; padding:0; }
                 #map { width:100vw; height:100vh; }
+                .user-marker {
+                    background: #4285F4;
+                    border: 3px solid white;
+                    border-radius: 50%;
+                    width: 20px;
+                    height: 20px;
+                    box-shadow: 0 0 4px rgba(0,0,0,0.3);
+                }
             </style>
         </head>
         <body>
@@ -64,6 +78,20 @@ actual fun InteractiveMap(
                         .addTo(map)
                         .bindPopup('<b>' + m.name + '</b><br>' + (m.desc || ''));
                 });
+
+                ${
+                    if (hasUserLocation) """
+                    var userIcon = L.divIcon({
+                        className: 'user-marker',
+                        iconSize: [20, 20],
+                        iconAnchor: [10, 10]
+                    });
+                    L.marker([$userLat, $userLng], { icon: userIcon })
+                        .addTo(map)
+                        .bindPopup('<b>Tu ubicación</b>');
+                    map.setView([$userLat, $userLng], map.getZoom());
+                    """ else ""
+                }
 
                 var marker = null;
                 map.on('click', function(e) {

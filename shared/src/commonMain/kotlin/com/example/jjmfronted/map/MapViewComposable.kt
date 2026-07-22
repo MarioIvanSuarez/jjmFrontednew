@@ -10,11 +10,17 @@ data class MapMarker(
     val description: String? = null
 )
 
+data class UserLocation(
+    val latitude: Double,
+    val longitude: Double
+)
+
 @Composable
 expect fun InteractiveMap(
     markers: List<MapMarker>,
     initialLatitude: Double,
     initialLongitude: Double,
     onMapClick: (Double, Double) -> Unit,
-    modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier
+    modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
+    userLocation: UserLocation? = null
 )
