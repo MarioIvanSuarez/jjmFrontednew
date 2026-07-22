@@ -43,6 +43,8 @@ fun MapScreen(
         loading = false
     }
 
+    val vacanteMap = remember(vacantes) { vacantes.associateBy { it.id } }
+
     val markers = remember(vacantes) {
         vacantes.mapNotNull { v ->
             val lat = v.latitude
@@ -102,7 +104,10 @@ fun MapScreen(
                         initialLongitude = userLocationState?.longitude ?: markers.firstOrNull()?.longitude ?: -99.1412,
                         onMapClick = { _, _ -> },
                         modifier = Modifier.fillMaxSize(),
-                        userLocation = userLocationState
+                        userLocation = userLocationState,
+                        onMarkerClick = { marker ->
+                            vacanteMap[marker.id]?.let { selectedVacancy = it }
+                        }
                     )
                 }
 

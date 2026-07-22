@@ -1,26 +1,20 @@
 package com.example.jjmfronted.map
 
-import android.annotation.SuppressLint
-import android.webkit.JavascriptInterface
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import android.graphics.Color
+import android.graphics.Paint
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.CustomZoomButtonsController
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Circle
+import org.osmdroid.views.overlay.MapEventsOverlay
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.ScaleBarOverlay
+import org.osmdroid.config.Configuration
 
-class MapJsBridge(
-    private val onMapClick: (Double, Double) -> Unit
-) {
-    @JavascriptInterface
-    fun onMapClicked(lat: String, lng: String) {
-        val latitude = lat.toDoubleOrNull() ?: return
-        val longitude = lng.toDoubleOrNull() ?: return
-        onMapClick(latitude, longitude)
-    }
-}
-
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 actual fun InteractiveMap(
     markers: List<MapMarker>,
@@ -28,94 +22,97 @@ actual fun InteractiveMap(
     initialLongitude: Double,
     onMapClick: (Double, Double) -> Unit,
     modifier: Modifier,
-    userLocation: UserLocation? = null
+    userLocation: UserLocation? = null,
+    onMarkerClick: ((MapMarker) -> Unit)? = null
 ) {
-    val bridge = remember { MapJsBridge(onMapClick) }
+    var mapView by remember { mutableStateOf<MapView?>(null) }
+    var clickedPosition by remember { mutableStateOf<GeoPoint?>(null) }
 
-    val markersJson = remember(markers) {
-        markers.joinToString(",") { m ->
-            """{id:${m.id},name:"${m.name.replace("\"","\\\"")}",lat:${m.latitude},lng:${m.longitude},desc:"${(m.description?:"").replace("\"","\\\"")}"}"""
+    LaunchedEffect(markers, userLocation, clickedPosition) {
+        val map = mapView ?: return@LaunchedEffect
+        map.overlays.removeAll { it !is MapEventsOverlay && it !is ScaleBarOverlay }
+
+        markers.forEach { m ->
+            val marker = Marker(map)
+            marker.position = GeoPoint(m.latitude, m.longitude)
+            marker.title = m.name
+            marker.snippet = m.description ?: ""
+            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            marker.setOnMarkerClickListener { _, _ ->
+                onMarkerClick?.invoke(m)
+                true
+            }
+            map.overlays.add(marker)
         }
+
+        clickedPosition?.let { pos ->
+            val marker = Marker(map)
+            marker.position = pos
+            marker.title = "Ubicación seleccionada"
+            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            marker.icon = org.osmdroid.views.overlay.Marker.defaultMarker(
+                org.osmdroid.views.overlay.Marker.STYLE_RED
+            )
+            map.overlays.add(marker)
+        }
+
+        userLocation?.let { ul ->
+            val circle = Circle(map)
+            circle.center = GeoPoint(ul.latitude, ul.longitude)
+            circle.radius = 50.0
+            circle.fillPaint = Paint().apply { color = 0x334285F4.toInt() }
+            circle.outlinePaint = Paint().apply {
+                color = 0xFF4285F4.toInt()
+                strokeWidth = 3f
+            }
+            map.overlays.add(circle)
+
+            val marker = Marker(map)
+            marker.position = GeoPoint(ul.latitude, ul.longitude)
+            marker.title = "Tu ubicación"
+            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            map.overlays.add(marker)
+
+            if (clickedPosition == null) {
+                map.controller.animateTo(GeoPoint(ul.latitude, ul.longitude))
+            }
+        }
+
+        map.invalidate()
     }
-
-    val userLat = userLocation?.latitude ?: initialLatitude
-    val userLng = userLocation?.longitude ?: initialLongitude
-
-    val hasUserLocation = userLocation != null
-
-    val html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-            <style>
-                body { margin:0; padding:0; }
-                #map { width:100vw; height:100vh; }
-                .user-marker {
-                    background: #4285F4;
-                    border: 3px solid white;
-                    border-radius: 50%;
-                    width: 20px;
-                    height: 20px;
-                    box-shadow: 0 0 4px rgba(0,0,0,0.3);
-                }
-            </style>
-        </head>
-        <body>
-            <div id="map"></div>
-            <script>
-                var map = L.map('map').setView([$initialLatitude, $initialLongitude], 6);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 18,
-                    attribution: '© OpenStreetMap'
-                }).addTo(map);
-
-                var markers = [$markersJson];
-                markers.forEach(function(m) {
-                    L.marker([m.lat, m.lng])
-                        .addTo(map)
-                        .bindPopup('<b>' + m.name + '</b><br>' + (m.desc || ''));
-                });
-
-                ${
-                    if (hasUserLocation) """
-                    var userIcon = L.divIcon({
-                        className: 'user-marker',
-                        iconSize: [20, 20],
-                        iconAnchor: [10, 10]
-                    });
-                    L.marker([$userLat, $userLng], { icon: userIcon })
-                        .addTo(map)
-                        .bindPopup('<b>Tu ubicación</b>');
-                    map.setView([$userLat, $userLng], map.getZoom());
-                    """ else ""
-                }
-
-                var marker = null;
-                map.on('click', function(e) {
-                    if (marker) map.removeLayer(marker);
-                    marker = L.marker([e.latlng.lat, e.latlng.lng]).addTo(map);
-                    if (window.MapBridge) {
-                        window.MapBridge.onMapClicked(e.latlng.lat.toString(), e.latlng.lng.toString());
-                    }
-                });
-            </script>
-        </body>
-        </html>
-    """.trimIndent()
 
     AndroidView(
         modifier = modifier,
         factory = { context ->
-            WebView(context).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.allowFileAccess = false
-                addJavascriptInterface(bridge, "MapBridge")
-                webViewClient = WebViewClient()
-                loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+            Configuration.getInstance().apply {
+                userAgentValue = context.packageName
+            }
+
+            MapView(context).apply {
+                setTileSource(org.osmdroid.tileprovider.tilesource.TileSourceFactory.MAPNIK)
+                setMultiTouchControls(true)
+                zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+                setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
+
+                controller.setZoom(6.0)
+                controller.setCenter(GeoPoint(initialLatitude, initialLongitude))
+
+                val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
+                    override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+                        clickedPosition = p
+                        onMapClick(p.latitude, p.longitude)
+                        return false
+                    }
+                    override fun longPressHelper(p: GeoPoint): Boolean = false
+                })
+                overlays.add(0, eventsOverlay)
+
+                val scaleBar = ScaleBarOverlay(this)
+                scaleBar.setAlignBottom(true)
+                scaleBar.setAlignRight(true)
+                overlays.add(scaleBar)
+
+                mapView = this
             }
         }
     )

@@ -22,5 +22,6 @@ expect fun InteractiveMap(
     initialLongitude: Double,
     onMapClick: (Double, Double) -> Unit,
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
-    userLocation: UserLocation? = null
+    userLocation: UserLocation? = null,
+    onMarkerClick: ((MapMarker) -> Unit)? = null
 )

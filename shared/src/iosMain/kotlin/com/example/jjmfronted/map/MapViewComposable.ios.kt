@@ -17,7 +17,8 @@ actual fun InteractiveMap(
     initialLongitude: Double,
     onMapClick: (Double, Double) -> Unit,
     modifier: Modifier,
-    userLocation: UserLocation? = null
+    userLocation: UserLocation? = null,
+    onMarkerClick: ((MapMarker) -> Unit)? = null
 ) {
     Box(
         modifier = modifier.fillMaxSize().background(Color(0xFFE3F2FD)),

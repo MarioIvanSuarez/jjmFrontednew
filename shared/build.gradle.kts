@@ -40,6 +40,7 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.androidx.core.ktx)
+            implementation("org.osmdroid:osmdroid-android:6.1.18")
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
