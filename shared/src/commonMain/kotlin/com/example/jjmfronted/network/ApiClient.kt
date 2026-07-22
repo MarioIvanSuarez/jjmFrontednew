@@ -42,19 +42,29 @@ object ApiClient {
 
     suspend fun login(email: String, password: String): Result<AuthResponse> {
         return runCatching {
-            client.post("$BASE_URL/auth/login") {
+            val response = client.post("$BASE_URL/auth/login") {
                 contentType(ContentType.Application.Json)
                 setBody(LoginRequest(email, password))
-            }.body<AuthResponse>()
+            }
+            if (response.status.value != 200) {
+                val error = try { response.body<Map<String, String>>()["error"] } catch (_: Exception) { null }
+                throw Exception(error ?: "Error al iniciar sesión")
+            }
+            response.body<AuthResponse>()
         }
     }
 
     suspend fun register(email: String, password: String, name: String, role: String): Result<AuthResponse> {
         return runCatching {
-            client.post("$BASE_URL/auth/register") {
+            val response = client.post("$BASE_URL/auth/register") {
                 contentType(ContentType.Application.Json)
                 setBody(RegisterRequest(email, password, name, role))
-            }.body<AuthResponse>()
+            }
+            if (response.status.value != 201) {
+                val error = try { response.body<Map<String, String>>()["error"] } catch (_: Exception) { null }
+                throw Exception(error ?: "Error al registrarse")
+            }
+            response.body<AuthResponse>()
         }
     }
 
