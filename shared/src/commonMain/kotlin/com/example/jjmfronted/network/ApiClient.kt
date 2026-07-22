@@ -16,7 +16,7 @@ private val jsonConfig = Json {
 
 object ApiClient {
 
-    private const val BASE_URL = "https://jjmbackend-production.up.railway.app"
+    private const val BASE_URL = "https://jjmbackendnew-production.up.railway.app"
 
     private var authToken: String? = null
 
