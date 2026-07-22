@@ -3,11 +3,7 @@ package com.example.jjmfronted.map
 import android.graphics.Paint
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -31,15 +27,6 @@ actual fun InteractiveMap(
 ) {
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var clickedPosition by remember { mutableStateOf<GeoPoint?>(null) }
-    val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        Configuration.getInstance().apply {
-            userAgentValue = context.packageName
-            osmdroidBasePath = java.io.File(context.cacheDir, "osmdroid")
-            osmdroidTileCache = java.io.File(context.cacheDir, "osmdroid/tiles")
-        }
-    }
 
     LaunchedEffect(markers, userLocation, clickedPosition) {
         val map = mapView ?: return@LaunchedEffect
@@ -92,35 +79,26 @@ actual fun InteractiveMap(
         map.invalidate()
     }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> mapView?.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapView?.onPause()
-                Lifecycle.Event.ON_DESTROY -> {
-                    mapView?.onDetach()
-                }
-                else -> {}
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            mapView?.onDetach()
-        }
-    }
-
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
+            Configuration.getInstance().apply {
+                userAgentValue = ctx.packageName
+                osmdroidBasePath = java.io.File(ctx.cacheDir, "osmdroid")
+                osmdroidTileCache = java.io.File(ctx.cacheDir, "osmdroid/tiles")
+            }
+
             MapView(ctx).apply {
                 setTileSource(TileSourceFactory.MAPNIK)
                 setMultiTouchControls(true)
                 zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+                isTilesScaledToDpi = true
+                setBackgroundColor(android.graphics.Color.parseColor("#F5F5F5"))
 
-                controller.setZoom(6.0)
+                controller.setZoom(5.0)
                 controller.setCenter(GeoPoint(initialLatitude, initialLongitude))
+                minZoomLevel = 3.0
+                maxZoomLevel = 19.0
 
                 val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
                     override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {

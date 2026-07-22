@@ -17,6 +17,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.work.runtime)
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
 
     implementation(libs.compose.uiToolingPreview)
     debugImplementation(libs.compose.uiTooling)
