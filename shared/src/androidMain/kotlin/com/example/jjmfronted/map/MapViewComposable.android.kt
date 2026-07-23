@@ -88,7 +88,7 @@ actual fun InteractiveMap(
                     }
                 }
                 val html = generateMapHtml(initialLatitude, initialLongitude)
-                loadDataWithBaseURL("https://unpkg.com/", html, "text/html", "UTF-8", null)
+                loadDataWithBaseURL("https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/", html, "text/html", "UTF-8", null)
                 webView = this
             }
         }
@@ -101,8 +101,8 @@ private fun generateMapHtml(initialLatitude: Double, initialLongitude: Double): 
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="leaflet.css">
+    <script src="leaflet.js"></script>
     <style>
         * { margin:0; padding:0; }
         html, body { width:100%; height:100%; background:#f5f5f5; }
@@ -117,6 +117,13 @@ private fun generateMapHtml(initialLatitude: Double, initialLongitude: Double): 
             maxZoom: 19,
             attribution: '&copy; OpenStreetMap'
         }).addTo(map);
+
+        delete L.Icon.Default.prototype._getIconUrl;
+        L.Icon.Default.mergeOptions({
+            iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+            iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+        });
 
         var vacancyMarkers = [];
         var clickedMarker = null;
