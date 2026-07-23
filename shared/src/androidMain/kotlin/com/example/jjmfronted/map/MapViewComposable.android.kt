@@ -1,34 +1,35 @@
 package com.example.jjmfronted.map
 
-import android.annotation.SuppressLint
-import android.webkit.JavascriptInterface
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
+import java.net.URL
+import kotlin.math.*
 
-private class MapJsBridge {
-    @Volatile
-    var onMapClick: ((Double, Double) -> Unit)? = null
-    @Volatile
-    var onMarkerClickId: ((Int) -> Unit)? = null
+private const val TILE_SIZE = 256
 
-    @JavascriptInterface
-    fun onMapClicked(lat: String, lng: String) {
-        val latitude = lat.toDoubleOrNull() ?: return
-        val longitude = lng.toDoubleOrNull() ?: return
-        onMapClick?.invoke(latitude, longitude)
-    }
+private data class TileKey(val x: Int, val y: Int, val zoom: Int)
 
-    @JavascriptInterface
-    fun onMarkerClicked(id: String) {
-        val markerId = id.toIntOrNull() ?: return
-        onMarkerClickId?.invoke(markerId)
-    }
-}
-
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 actual fun InteractiveMap(
     markers: List<MapMarker>,
@@ -39,137 +40,181 @@ actual fun InteractiveMap(
     userLocation: UserLocation? = null,
     onMarkerClick: ((MapMarker) -> Unit)? = null
 ) {
-    val bridge = remember { MapJsBridge() }
-    val markerMap = remember(markers) { markers.associateBy { it.id } }
-    var webView by remember { mutableStateOf<WebView?>(null) }
+    var zoom by remember { mutableFloatStateOf(13f) }
+    var centerLat by remember { mutableDoubleStateOf(initialLatitude) }
+    var centerLng by remember { mutableDoubleStateOf(initialLongitude) }
+    var viewSize by remember { mutableStateOf(Offset.Zero) }
+    val tileCache = remember { mutableMapOf<TileKey, Bitmap>() }
 
-    LaunchedEffect(onMapClick, markerMap, onMarkerClick) {
-        bridge.onMapClick = onMapClick
-        bridge.onMarkerClickId = { id ->
-            markerMap[id]?.let { onMarkerClick?.invoke(it) }
-        }
+    val zoomInt = zoom.toInt().coerceIn(3, 19)
+
+    val visibleTiles = remember(centerLat, centerLng, zoomInt, viewSize) {
+        calcVisibleTiles(centerLat, centerLng, zoomInt, viewSize.x.toInt(), viewSize.y.toInt())
     }
 
-    LaunchedEffect(markers, userLocation) {
-        webView?.let { view ->
-            val data = buildJsPayload(markers, userLocation)
-            view.evaluateJavascript("updateMap($data);", null)
-        }
-    }
-
-    AndroidView(
-        modifier = modifier,
-        factory = { context ->
-            val html = generateMapHtml(initialLatitude, initialLongitude)
-            val file = java.io.File(context.cacheDir, "map_${initialLatitude}_${initialLongitude}.html")
-            if (!file.exists()) {
-                file.writeText(html)
+    LaunchedEffect(visibleTiles) {
+        visibleTiles.map { tile ->
+            async(Dispatchers.IO) {
+                val key = TileKey(tile.x, tile.y, tile.zoom)
+                if (key !in tileCache) {
+                    try {
+                        val url = "https://tile.openstreetmap.org/${tile.zoom}/${tile.x}/${tile.y}.png"
+                        URL(url).openStream().use { BitmapFactory.decodeStream(it) }
+                            ?.let { tileCache[key] = it }
+                    } catch (_: Exception) {}
+                }
             }
+        }.forEach { it.await() }
+    }
 
-            WebView(context).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.allowFileAccess = true
-                settings.allowContentAccess = true
-                settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                settings.builtInZoomControls = false
-                settings.displayZoomControls = false
-
-                addJavascriptInterface(bridge, "MapBridge")
-
-                webViewClient = object : WebViewClient() {
-                    override fun onPageFinished(view: WebView, url: String) {
-                        super.onPageFinished(view, url)
-                        val data = buildJsPayload(markers, userLocation)
-                        view.evaluateJavascript("updateMap($data);", null)
+    Box(
+        modifier = modifier
+            .clipToBounds()
+            .background(Color(0xFFE8E8E8))
+            .pointerInput(Unit) {
+                detectTransformGestures { centroid, pan, gestureZoom, _ ->
+                    val newZoom = (zoom * gestureZoom).coerceIn(3f, 19f)
+                    if (newZoom != zoom) {
+                        val (latBefore, lngBefore) = screenToWorld(centroid.x, centroid.y, centerLat, centerLng, zoom, viewSize.x, viewSize.y)
+                        zoom = newZoom
+                        val (latAfter, lngAfter) = screenToWorld(centroid.x, centroid.y, centerLat, centerLng, zoom, viewSize.x, viewSize.y)
+                        centerLat += latBefore - latAfter
+                        centerLng += lngBefore - lngAfter
+                    } else {
+                        val (lat1, lng1) = screenToWorld(0f, 0f, centerLat, centerLng, zoom, viewSize.x, viewSize.y)
+                        val (lat2, lng2) = screenToWorld(pan.x, pan.y, centerLat, centerLng, zoom, viewSize.x, viewSize.y)
+                        centerLat += lat1 - lat2
+                        centerLng += lng1 - lng2
                     }
                 }
+            }
+            .pointerInput(markers) {
+                detectTapGestures { tapOffset ->
+                    var tappedId: Int? = null
+                    for (m in markers) {
+                        val (mx, my) = latLngToScreen(m.latitude, m.longitude, centerLat, centerLng, zoom, viewSize.x, viewSize.y)
+                        if ((tapOffset - Offset(mx, my)).getDistance() < 30f) {
+                            tappedId = m.id
+                            break
+                        }
+                    }
+                    if (tappedId != null) {
+                        onMarkerClick?.invoke(markers.first { it.id == tappedId })
+                    } else {
+                        val (lat, lng) = screenToWorld(tapOffset.x, tapOffset.y, centerLat, centerLng, zoom, viewSize.x, viewSize.y)
+                        onMapClick(lat, lng)
+                    }
+                }
+            }
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .onSizeChanged { viewSize = Offset(it.width.toFloat(), it.height.toFloat()) }
+        ) {
+            val centerX = size.width / 2
+            val centerY = size.height / 2
+            val worldSize = TILE_SIZE shl zoomInt
+            val centerWorldX = ((centerLng + 180.0) / 360.0 * worldSize)
+            val centerWorldY = latToWorldY(centerLat, worldSize)
 
-                loadUrl("file:///${file.absolutePath}")
-                webView = this
+            visibleTiles.forEach { tile ->
+                val bitmap = tileCache[TileKey(tile.x, tile.y, tile.zoom)]
+                if (bitmap != null) {
+                    val tileWorldX = tile.x * TILE_SIZE
+                    val tileWorldY = tile.y * TILE_SIZE
+                    val screenX = centerX + (tileWorldX - centerWorldX).toFloat()
+                    val screenY = centerY + (tileWorldY - centerWorldY).toFloat()
+                    drawImage(bitmap.asImageBitmap(), topLeft = Offset(screenX, screenY))
+                }
+            }
+
+            userLocation?.let { ul ->
+                val (sx, sy) = latLngToScreen(ul.latitude, ul.longitude, centerLat, centerLng, zoom, viewSize.x, viewSize.y)
+                drawCircle(Color(0xFF4285F4), radius = 12f, center = Offset(sx, sy))
+                drawCircle(Color(0x334285F4), radius = 28f, center = Offset(sx, sy))
             }
         }
-    )
-}
 
-private fun buildJsPayload(markers: List<MapMarker>, userLocation: UserLocation?): String {
-    val markersArr = markers.joinToString(",") { m ->
-        val safeName = m.name.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-        val safeDesc = (m.description ?: "").replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-        """{"id":${m.id},"name":"$safeName","lat":${m.latitude},"lng":${m.longitude},"desc":"$safeDesc"}"""
-    }
-    val userPos = if (userLocation != null) """{"lat":${userLocation.latitude},"lng":${userLocation.longitude}}""" else "null"
-    return """[[$markersArr], $userPos]"""
-}
-
-private fun generateMapHtml(initialLatitude: Double, initialLongitude: Double): String {
-    return """<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<style>
-*{margin:0;padding:0}html,body{width:100%;height:100%;background:#e8e8e8}
-#map{width:100%;height:100%}
-</style>
-</head>
-<body>
-<div id="map"></div>
-<script>
-var map = L.map('map',{zoomControl:true}).setView([$initialLatitude,$initialLongitude],6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OSM'}).addTo(map);
-
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-    iconUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-    shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png'
-});
-
-var vacancyMarkers=[];
-var clickedMarker=null;
-var userCircle=null;
-var userMarker=null;
-
-function updateMap(markersArr,userLoc){
-    vacancyMarkers.forEach(function(m){map.removeLayer(m)});
-    vacancyMarkers=[];
-    if(clickedMarker){map.removeLayer(clickedMarker);clickedMarker=null}
-    if(userCircle){map.removeLayer(userCircle);userCircle=null}
-    if(userMarker){map.removeLayer(userMarker);userMarker=null}
-
-    if(markersArr&&markersArr.length){
-        markersArr.forEach(function(m){
-            var mk=L.marker([m.lat,m.lng]).addTo(map)
-                .bindPopup('<b>'+m.name+'</b><br>'+(m.desc||''))
-                .on('click',function(){window.MapBridge&&window.MapBridge.onMarkerClicked(String(m.id))});
-            vacancyMarkers.push(mk);
-        });
-        map.fitBounds(L.featureGroup(vacancyMarkers).getBounds().pad(0.1));
-    }
-
-    if(userLoc){
-        userCircle=L.circle([userLoc.lat,userLoc.lng],{
-            radius:50,color:'#4285F4',fillColor:'#4285F4',fillOpacity:0.2,weight:3
-        }).addTo(map);
-        userMarker=L.marker([userLoc.lat,userLoc.lng],{
-            icon:L.divIcon({
-                className:'',
-                html:'<div style="background:#4285F4;border:3px solid white;border-radius:50%;width:20px;height:20px;box-shadow:0 0 4px rgba(0,0,0,0.3)"></div>',
-                iconSize:[26,26],iconAnchor:[13,13]
-            })
-        }).addTo(map).bindPopup('<b>Tu ubicaci\u00f3n</b>');
-        map.setView([userLoc.lat,userLoc.lng],Math.max(map.getZoom(),13));
+        markers.forEach { m ->
+            val (sx, sy) = latLngToScreen(m.latitude, m.longitude, centerLat, centerLng, zoom, viewSize.x, viewSize.y)
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset((sx - 12).toInt(), (sy - 36).toInt()) }
+                    .width(24.dp)
+                    .height(36.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .background(Color(0xFFE53935), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("📍", fontSize = 14.sp)
+                }
+            }
+        }
     }
 }
 
-map.on('click',function(e){
-    if(clickedMarker)map.removeLayer(clickedMarker);
-    clickedMarker=L.marker([e.latlng.lat,e.latlng.lng]).addTo(map);
-    window.MapBridge&&window.MapBridge.onMapClicked(String(e.latlng.lat),String(e.latlng.lng));
-});
-</script>
-</body>
-</html>"""
+// --- Web Mercator coordinate math ---
+
+private fun latToWorldY(lat: Double, worldSize: Int): Double {
+    val sinLat = sin(lat * PI / 180)
+    return (1.0 - ln((1 + sinLat) / (1 - sinLat)) / (2 * PI)) / 2 * worldSize
+}
+
+private fun worldYToLat(worldY: Double, worldSize: Int): Double {
+    val y = worldY / worldSize
+    return (atan(sinh(PI * (1 - 2 * y)))) * 180 / PI
+}
+
+private fun screenToWorld(
+    screenX: Float, screenY: Float,
+    centerLat: Double, centerLng: Double,
+    zoom: Float, viewW: Float, viewH: Float
+): Pair<Double, Double> {
+    val zi = zoom.toInt().coerceIn(3, 19)
+    val ws = TILE_SIZE shl zi
+    val cx = (centerLng + 180.0) / 360.0 * ws
+    val cy = latToWorldY(centerLat, ws)
+    val wx = cx + (screenX - viewW / 2)
+    val wy = cy + (screenY - viewH / 2)
+    val lng = wx / ws * 360.0 - 180.0
+    val lat = worldYToLat(wy, ws)
+    return Pair(lat, lng)
+}
+
+private fun latLngToScreen(
+    lat: Double, lng: Double,
+    centerLat: Double, centerLng: Double,
+    zoom: Float, viewW: Float, viewH: Float
+): Pair<Float, Float> {
+    val zi = zoom.toInt().coerceIn(3, 19)
+    val ws = TILE_SIZE shl zi
+    val cx = (centerLng + 180.0) / 360.0 * ws
+    val cy = latToWorldY(centerLat, ws)
+    val tx = (lng + 180.0) / 360.0 * ws
+    val ty = latToWorldY(lat, ws)
+    return Pair((viewW / 2 + (tx - cx)).toFloat(), (viewH / 2 + (ty - cy)).toFloat())
+}
+
+private data class Tile(val x: Int, val y: Int, val zoom: Int)
+
+private fun calcVisibleTiles(centerLat: Double, centerLng: Double, zoom: Int, viewW: Int, viewH: Int): List<Tile> {
+    if (viewW <= 0 || viewH <= 0) return emptyList()
+    val ws = TILE_SIZE shl zoom
+    val cx = ((centerLng + 180.0) / 360.0 * ws).toInt()
+    val cy = latToWorldY(centerLat, ws).toInt()
+    val minTx = (cx - viewW / 2) / TILE_SIZE
+    val maxTx = (cx + viewW / 2) / TILE_SIZE
+    val minTy = (cy - viewH / 2) / TILE_SIZE
+    val maxTy = (cy + viewH / 2) / TILE_SIZE
+    val nt = 1 shl zoom
+
+    return (minTx..maxTx).flatMap { tx ->
+        (minTy..maxTy).map { ty ->
+            Tile(((tx % nt) + nt) % nt, ((ty % nt) + nt) % nt, zoom)
+        }
+    }
 }
