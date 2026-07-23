@@ -13,9 +13,6 @@
         android:roundIcon="@drawable/whatsapp_image_2026_06_29_at_8_42_49_pm"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="YOUR_GOOGLE_MAPS_API_KEY"/>
         <activity
             android:exported="true"
             android:name=".MainActivity">
