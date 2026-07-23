@@ -30,6 +30,13 @@ private const val TILE_SIZE = 256
 
 private data class TileKey(val x: Int, val y: Int, val zoom: Int)
 
+private val tileProviders = listOf(
+    "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
+)
+
 @Composable
 actual fun InteractiveMap(
     markers: List<MapMarker>,
@@ -45,6 +52,8 @@ actual fun InteractiveMap(
     var centerLng by remember { mutableDoubleStateOf(initialLongitude) }
     var viewSize by remember { mutableStateOf(Offset.Zero) }
     val tileCache = remember { mutableMapOf<TileKey, Bitmap>() }
+    var loadErrors by remember { mutableIntStateOf(0) }
+    var loadedTiles by remember { mutableIntStateOf(0) }
 
     val zoomInt = zoom.toInt().coerceIn(3, 19)
 
@@ -53,16 +62,33 @@ actual fun InteractiveMap(
     }
 
     LaunchedEffect(visibleTiles) {
+        loadErrors = 0
+        loadedTiles = 0
+        val total = visibleTiles.size
         visibleTiles.map { tile ->
             async(Dispatchers.IO) {
                 val key = TileKey(tile.x, tile.y, tile.zoom)
-                if (key !in tileCache) {
-                    try {
-                        val url = "https://tile.openstreetmap.org/${tile.zoom}/${tile.x}/${tile.y}.png"
-                        URL(url).openStream().use { BitmapFactory.decodeStream(it) }
-                            ?.let { tileCache[key] = it }
-                    } catch (_: Exception) {}
+                if (key in tileCache) {
+                    loadedTiles++
+                    return@async
                 }
+                var success = false
+                for (provider in tileProviders) {
+                    try {
+                        val url = provider
+                            .replace("{z}", tile.zoom.toString())
+                            .replace("{x}", tile.x.toString())
+                            .replace("{y}", tile.y.toString())
+                        val bitmap = URL(url).openStream().use { BitmapFactory.decodeStream(it) }
+                        if (bitmap != null) {
+                            tileCache[key] = bitmap
+                            loadedTiles++
+                            success = true
+                            return@async
+                        }
+                    } catch (_: Exception) { continue }
+                }
+                if (!success) loadErrors++
             }
         }.forEach { it.await() }
     }
@@ -134,6 +160,21 @@ actual fun InteractiveMap(
                 drawCircle(Color(0xFF4285F4), radius = 12f, center = Offset(sx, sy))
                 drawCircle(Color(0x334285F4), radius = 28f, center = Offset(sx, sy))
             }
+        }
+
+        // Debug overlay
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(4.dp)
+                .background(Color(0xCCFFFFFF), shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                "Zoom: ${zoom.toInt()} | Tiles: $loadedTiles/${visibleTiles.size} | Err: $loadErrors",
+                fontSize = 10.sp,
+                color = Color(0xFF616161)
+            )
         }
 
         markers.forEach { m ->
